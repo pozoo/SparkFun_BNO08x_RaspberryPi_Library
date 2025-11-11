@@ -57,12 +57,6 @@
 //I2C_BUFFER_LENGTH is defined in Wire.H
 #define I2C_BUFFER_LENGTH 32
 
-//#else
-
-//The catch-all default is 32
-//#define I2C_BUFFER_LENGTH 32
-
-#endif
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
@@ -135,8 +129,8 @@
 class BNO08x
 {
 public:
-	bool begin(uint8_t deviceAddress = BNO08x_DEFAULT_ADDRESS, TwoWire &wirePort = Wire, int8_t user_INTPin = -1, int8_t user_RSTPin = -1); //By default use the default I2C addres, and use Wire port
-	bool beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed = 1000000, SPIClass &spiPort = SPI);
+	bool begin(uint8_t deviceAddress = BNO08x_DEFAULT_ADDRESS, int8_t user_INTPin = -1, int8_t user_RSTPin = -1); //By default use the default I2C addres, and use Wire port
+	bool beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed = 1000000);
 	bool isConnected();
 
     sh2_ProductIds_t prodIds; ///< The product IDs returned by the sensor

@@ -40,14 +40,27 @@
   Thank you Adafruit and your developers for all your hard work put into your Library!
 */
 
-#include "SparkFun_BNO08x_Arduino_Library.h"
+#include "SparkFun_BNO08x_Raspi_Library.h"
+#include <cstddef> // for size_t
+#include <cmath>
+#include <cstring>
+#include <unistd.h> // for usleep
+#include <algorithm> // for std::min
+#include <time.h>
+#include <gpiod.h>
+#include <stdio.h>
 
 int8_t _int_pin = -1, _reset_pin = -1;
-static TwoWire *_i2cPort = NULL;		//The generic connection to user's chosen I2C hardware
-static SPIClass *_spiPort = NULL;  		//The generic connection to user's chosen SPI hardware
 static uint8_t _deviceAddress = BNO08x_DEFAULT_ADDRESS; //Keeps track of I2C address. setI2CAddress changes this.
 unsigned long _spiPortSpeed = 3000000; //Optional user defined port speed
 uint8_t _cs;				 //Pin needed for SPI
+
+// GPIO variables
+struct gpiod_chip *chip;
+struct gpiod_line *lineINT;
+struct gpiod_line *lineRST;
+struct gpiod_line *lineCS;
+#define GPIO_CONSUMER "BNO08x_library"
 
 
 static sh2_SensorValue_t *_sensor_value = NULL;
@@ -87,11 +100,11 @@ size_t maxBufferSize();
 
 //Initializes the sensor with basic settings using I2C
 //Returns false if sensor is not detected
-boolean BNO08x::begin(uint8_t deviceAddress, TwoWire &wirePort, int8_t user_INTPin, int8_t user_RSTPin)
+bool BNO08x::begin(uint8_t deviceAddress, int8_t user_INTPin, int8_t user_RSTPin)
 {
-  	_deviceAddress = deviceAddress;
-  	_i2cPort = &wirePort;
-
+  	/* _deviceAddress = deviceAddress;
+  	//_i2cPort = &wirePort;
+ *
 	// if user passes in an INT pin, then lets set that up.
 	if(user_INTPin != -1)
 	{
@@ -119,13 +132,13 @@ boolean BNO08x::begin(uint8_t deviceAddress, TwoWire &wirePort, int8_t user_INTP
     _HAL.read = i2chal_read;
     _HAL.write = i2chal_write;
     _HAL.getTimeUs = hal_getTimeUs;
-
+*/
     return _init();
 }
 
 //Initializes the sensor with basic settings using SPI
 //Returns false if sensor is not detected
-boolean BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed, SPIClass &spiPort)
+bool BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed)
 {
 	//Get user settings
 	_spiPort = &spiPort;
@@ -137,11 +150,56 @@ boolean BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_R
 	_int_pin = user_INTPin;
 	_reset_pin = user_RSTPin;
 
-	pinMode(_cs, OUTPUT);
-	pinMode(_int_pin, INPUT_PULLUP);
-	pinMode(_reset_pin, OUTPUT);
+  int ret = 0;
 
-	digitalWrite(_cs, HIGH); //Deselect BNO08x
+  // Open the GPIO chip (usually /dev/gpiochip0) on PI5
+    chip = gpiod_chip_open_by_name("gpiochip0");
+    if (!chip) {
+        perror("Open chip failed");
+        return 1;
+    }
+
+    // Configure GPIOs
+    lineCS = gpiod_chip_get_line(chip, _cs);
+    if (!lineCS) {
+        perror("Get line failed");
+        gpiod_chip_close(chip);
+        return 1;
+    }
+    ret = gpiod_line_request_output(lineCS, GPIO_CONSUMER, 0);
+    if (ret < 0) {
+        perror("Request line as output failed");
+        gpiod_chip_close(chip);
+        return 1;
+    }
+
+    lineRST = gpiod_chip_get_line(chip, _reset_pin);
+    if (!lineRST) {
+        perror("Get line failed");
+        gpiod_chip_close(chip);
+        return 1;
+    }
+    ret = gpiod_line_request_output(lineRST, GPIO_CONSUMER, 0);
+    if (ret < 0) {
+        perror("Request line as output failed");
+        gpiod_chip_close(chip);
+        return 1;
+    }
+
+    lineINT = gpiod_chip_get_line(chip, _int_pin);
+    if (!lineINT) {
+        perror("Get line failed");
+        gpiod_chip_close(chip);
+        return 1;
+    }
+    ret = gpiod_line_request_input_flags(lineINT, GPIO_CONSUMER, GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP);
+    if (ret < 0) {
+        perror("Request line as input with pull-up failed");
+        gpiod_chip_close(chip);
+        return 1;
+    }
+
+    gpiod_line_set_value(lineCS, 1); //Deselect BNO08x
 
 	_spiPort->begin(); //Turn on SPI hardware
 
@@ -278,11 +336,11 @@ float BNO08x::getQuatJ()
 	{
 		if ((quat < -1.0) || (quat > 1.0)) // Debug the occasional non-unitary Quat
 		{
-			_debugPort->print(F("getQuatJ: quat: "));
+			_debugPort->print("getQuatJ: quat: ");
 			_debugPort->print(quat, 2);
-			_debugPort->print(F(" rawQuatJ: "));
+			_debugPort->print(" rawQuatJ: ");
 			_debugPort->print(rawQuatJ);
-			_debugPort->print(F(" rotationVector_Q1: "));
+			_debugPort->print(" rotationVector_Q1: ");
 			_debugPort->println(rotationVector_Q1);
 		}
 	}
@@ -298,11 +356,11 @@ float BNO08x::getQuatK()
 	{
 		if ((quat < -1.0) || (quat > 1.0)) // Debug the occasional non-unitary Quat
 		{
-			_debugPort->print(F("getQuatK: quat: "));
+			_debugPort->print("getQuatK: quat: ");
 			_debugPort->print(quat, 2);
-			_debugPort->print(F(" rawQuatK: "));
+			_debugPort->print(" rawQuatK: ");
 			_debugPort->print(rawQuatK);
-			_debugPort->print(F(" rotationVector_Q1: "));
+			_debugPort->print(" rotationVector_Q1: ");
 			_debugPort->println(rotationVector_Q1);
 		}
 	}
@@ -1191,11 +1249,11 @@ static int i2chal_open(sh2_Hal_t *self) {
       success = true;
       break;
     }
-    delay(30);
+    usleep(30000); // 30ms in microseconds
   }
   if (!success)
     return -1;
-  delay(300);
+  usleep(30000); // 30ms in microseconds
   return 0;
 }
 
@@ -1248,9 +1306,9 @@ static int i2chal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len,
 
   while (cargo_remaining > 0) {
     if (first_read) {
-      read_size = min(i2c_buffer_max, (size_t)cargo_remaining);
+      read_size = std::min(i2c_buffer_max, (size_t)cargo_remaining);
     } else {
-      read_size = min(i2c_buffer_max, (size_t)cargo_remaining + 4);
+      read_size = std::min(i2c_buffer_max, (size_t)cargo_remaining + 4);
     }
 
     // Serial.print("Reading from I2C: "); Serial.println(read_size);
@@ -1307,7 +1365,7 @@ static int i2chal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
   Serial.println(i2c_buffer_max);
   */
 
-  uint16_t write_size = min(i2c_buffer_max, len);
+  uint16_t write_size = std::min(i2c_buffer_max, (size_t)len);
 
   if(_int_pin != -1) {
 	if (!hal_wait_for_int()) {
@@ -1329,21 +1387,23 @@ static int i2chal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
 
 static void hal_hardwareReset(void) {
   if (_reset_pin != -1) {
-    // Serial.println("BNO08x Hardware reset");
-
-    pinMode(_reset_pin, OUTPUT);
-    digitalWrite(_reset_pin, HIGH);
-    delay(10);
-    digitalWrite(_reset_pin, LOW);
-    delay(10);
-    digitalWrite(_reset_pin, HIGH);
-    delay(10);
+    gpiod_line_set_value(lineRST, 1); // HIGH
+    usleep(10000); // 10ms in microseconds
+    gpiod_line_set_value(lineRST, 0); // LOW
+    usleep(10000); // 10ms in microseconds
+    gpiod_line_set_value(lineRST, 1); // HIGH
+    usleep(10000); // 10ms in microseconds
   }
 }
 
 static uint32_t hal_getTimeUs(sh2_Hal_t *self) {
-  uint32_t t = millis() * 1000;
+  // uint32_t t = millis() * 1000; //Arduino millis
+
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  uint32_t t = (ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
   // Serial.printf("I2C HAL get time: %d\n", t);
+
   return t;
 }
 
@@ -1384,11 +1444,13 @@ uint8_t BNO08x::getSensorEventID()
 
 
 //Returns true if I2C device ack's
-boolean BNO08x::isConnected()
+bool BNO08x::isConnected()
 {
+  /* XXX adapt to raspi
   	_i2cPort->beginTransmission((uint8_t)_deviceAddress);
   	if (_i2cPort->endTransmission() != 0)
     	return (false); //Sensor did not ACK
+  */
   	return (true);
 }
 
@@ -1413,6 +1475,8 @@ boolean BNO08x::isConnected()
 bool i2c_write(const uint8_t *buffer, size_t len, bool stop,
                                const uint8_t *prefix_buffer,
                                size_t prefix_len) {
+  /* XXX adapt to raspi
+
   if ((len + prefix_len) > maxBufferSize()) {
     // currently not guaranteed to work if more than 32 bytes!
     // we will need to find out if some platforms have larger
@@ -1439,6 +1503,7 @@ bool i2c_write(const uint8_t *buffer, size_t len, bool stop,
   } else {
     return false;
   }
+  */
 }
 
 /*!
@@ -1449,7 +1514,7 @@ bool i2c_write(const uint8_t *buffer, size_t len, bool stop,
  *    @param  stop Whether to send an I2C STOP signal on read
  *    @return True if read was successful, otherwise false.
  */
-boolean i2c_read(uint8_t *buffer, size_t len, bool stop) {
+bool i2c_read(uint8_t *buffer, size_t len, bool stop) {
   size_t pos = 0;
   while (pos < len) {
     size_t read_len =
@@ -1462,7 +1527,8 @@ boolean i2c_read(uint8_t *buffer, size_t len, bool stop) {
   return true;
 }
 
-boolean _i2c_read(uint8_t *buffer, size_t len, bool stop) {
+bool _i2c_read(uint8_t *buffer, size_t len, bool stop) {
+ /* 
 #if defined(TinyWireM_h)
   size_t recv = _i2cPort->requestFrom((uint8_t)_deviceAddress, (uint8_t)len);
 #elif defined(ARDUINO_ARCH_MEGAAVR)
@@ -1479,6 +1545,7 @@ boolean _i2c_read(uint8_t *buffer, size_t len, bool stop) {
   for (uint16_t i = 0; i < len; i++) {
     buffer[i] = _i2cPort->read();
   }
+  */
   return true;
 }
 
@@ -1502,12 +1569,11 @@ static int spihal_open(sh2_Hal_t *self) {
 
 static bool hal_wait_for_int(void) {
   for (int i = 0; i < 500; i++) {
-    if (!digitalRead(_int_pin))
+    if (gpiod_line_get_value(lineINT) == 0)  // Check if INT pin is LOW
       return true;
-    // Serial.print(".");
-    delay(1);
+    usleep(1000);
   }
-  // Serial.println("Timed out!");
+  // timed out, try to recover with HW reset
   hal_hardwareReset();
 
   return false;
