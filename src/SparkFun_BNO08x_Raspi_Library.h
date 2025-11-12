@@ -44,15 +44,14 @@
 #include "sh2_SensorValue.h"
 #include "sh2_err.h"
 
+
 #pragma once
-
-
 
 //The default I2C address for the BNO08x on the SparkFun breakout is 0x4B. 0x4A is also possible.
 #define BNO08x_DEFAULT_ADDRESS 0x4B
 
-//Platform specific configurations
-
+// The default SPI port for Raspberry Pi
+#define BNO08x_DEFAULT_SPI_DEV "/dev/spidev0.0"
 
 //I2C_BUFFER_LENGTH is defined in Wire.H
 #define I2C_BUFFER_LENGTH 32
@@ -130,7 +129,7 @@ class BNO08x
 {
 public:
 	bool begin(uint8_t deviceAddress = BNO08x_DEFAULT_ADDRESS, int8_t user_INTPin = -1, int8_t user_RSTPin = -1); //By default use the default I2C addres, and use Wire port
-	bool beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed = 1000000);
+	bool beginSPI(char* dev = BNO08x_DEFAULT_SPI_DEV, uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed = 1000000);
 	bool isConnected();
 
     sh2_ProductIds_t prodIds; ///< The product IDs returned by the sensor
@@ -145,7 +144,7 @@ public:
     bool getSensorEvent();
 	uint8_t getSensorEventID();
 
-	void enableDebugging(Stream &debugPort = Serial); //Turn on debug printing. If user doesn't specify then Serial will be used.
+	void BNO08x::enableDebugging(); //Turn on debug printing. If user doesn't specify then Serial will be used.
 
 	bool softReset();	  //Try to reset the IMU via software
 	bool serviceBus(void);	
@@ -289,9 +288,8 @@ public:
 //	uint8_t _cs;				 //Pins needed for SPI
 
 private:
-
-	Stream *_debugPort;			 //The stream to send debug messages to if enabled. Usually Serial.
-	bool _printDebug = false; //Flag to print debugging variables
+    std::ostream *_debugPort;  // Changed from Stream *_debugPort
+    bool _printDebug = false; //Flag to print debugging variables
 
 	//These are the raw sensor values (without Q applied) pulled from the user requested Input Report
 	uint16_t rawAccelX, rawAccelY, rawAccelZ, accelAccuracy;

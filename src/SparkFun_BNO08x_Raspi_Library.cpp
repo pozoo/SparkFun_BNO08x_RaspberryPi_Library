@@ -49,11 +49,17 @@
 #include <time.h>
 #include <gpiod.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
+#include <linux/spi/spidev.h>
+#include <fcntl.h>
 
 int8_t _int_pin = -1, _reset_pin = -1;
 static uint8_t _deviceAddress = BNO08x_DEFAULT_ADDRESS; //Keeps track of I2C address. setI2CAddress changes this.
-unsigned long _spiPortSpeed = 3000000; //Optional user defined port speed
+uint32_t _spiPortSpeed = 3000000; //Optional user defined port speed
+uint8_t _spiMode = SPI_MODE_3;   // CPOL=1, CPHA=1
+uint8_t _spiBits = 8;            // 8‐bit words
 uint8_t _cs;				 //Pin needed for SPI
+int fd_spi;                 // SPI file descriptor
 
 // GPIO variables
 struct gpiod_chip *chip;
@@ -138,15 +144,13 @@ bool BNO08x::begin(uint8_t deviceAddress, int8_t user_INTPin, int8_t user_RSTPin
 
 //Initializes the sensor with basic settings using SPI
 //Returns false if sensor is not detected
-bool BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed)
+bool BNO08x::beginSPI(char *dev, uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed)
 {
-	//Get user settings
-	_spiPort = &spiPort;
-	_spiPortSpeed = spiPortSpeed;
+  _spiPortSpeed = spiPortSpeed;
 	if (_spiPortSpeed > 3000000)
 		_spiPortSpeed = 3000000; //BNO08x max is 3MHz
 
-	_cs = user_CSPin;
+  _cs = user_CSPin;
 	_int_pin = user_INTPin;
 	_reset_pin = user_RSTPin;
 
@@ -201,7 +205,13 @@ bool BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTP
 
     gpiod_line_set_value(lineCS, 1); //Deselect BNO08x
 
-	_spiPort->begin(); //Turn on SPI hardware
+    fd_spi = open(dev, O_RDWR);
+        if (fd_spi < 0) return false;
+        ioctl(fd_spi, SPI_IOC_WR_MODE, &_spiMode);
+        ioctl(fd_spi, SPI_IOC_WR_BITS_PER_WORD, &_spiBits);
+        ioctl(fd_spi, SPI_IOC_WR_MAX_SPEED_HZ, &_spiPortSpeed);
+
+	//_spiPort->begin(); //Turn on SPI hardware
 
 	_HAL.open = spihal_open;
 	_HAL.close = spihal_close;
@@ -212,12 +222,10 @@ bool BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTP
     return _init();
 }
 
-//Calling this function with nothing sets the debug port to Serial
-//You can also call it with other streams like Serial1, SerialUSB, etc.
-void BNO08x::enableDebugging(Stream &debugPort)
+
+void BNO08x::enableDebugging()
 {
-	_debugPort = &debugPort;
-	_printDebug = true;
+    _printDebug = true;
 }
 
 // Quaternion to Euler conversion
@@ -336,12 +344,7 @@ float BNO08x::getQuatJ()
 	{
 		if ((quat < -1.0) || (quat > 1.0)) // Debug the occasional non-unitary Quat
 		{
-			_debugPort->print("getQuatJ: quat: ");
-			_debugPort->print(quat, 2);
-			_debugPort->print(" rawQuatJ: ");
-			_debugPort->print(rawQuatJ);
-			_debugPort->print(" rotationVector_Q1: ");
-			_debugPort->println(rotationVector_Q1);
+			printf("getQuatJ: quat: %.2f rawQuatJ: %d rotationVector_Q1: %d\n", quat, rawQuatJ, rotationVector_Q1);
 		}
 	}
 	//return (quat);
@@ -354,15 +357,10 @@ float BNO08x::getQuatK()
 	float quat = qToFloat(rawQuatK, rotationVector_Q1);
 	if (_printDebug == true)
 	{
-		if ((quat < -1.0) || (quat > 1.0)) // Debug the occasional non-unitary Quat
-		{
-			_debugPort->print("getQuatK: quat: ");
-			_debugPort->print(quat, 2);
-			_debugPort->print(" rawQuatK: ");
-			_debugPort->print(rawQuatK);
-			_debugPort->print(" rotationVector_Q1: ");
-			_debugPort->println(rotationVector_Q1);
-		}
+    if ((quat < -1.0) || (quat > 1.0)) // Debug the occasional non-unitary Quat
+    {
+        printf("getQuatK: quat: %.2f rawQuatK: %d rotationVector_Q1: %d\n", quat, rawQuatK, rotationVector_Q1);
+    }
 	}
 	//return (quat);
 	return _sensor_value->un.rotationVector.k;
@@ -1337,7 +1335,7 @@ static int i2chal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len,
       cargo_read_amount = read_size - 4;
       memcpy(pBuffer, i2c_buffer + 4, cargo_read_amount);
     }
-    // advance our pointer by the amount of cargo read
+    // advance our pointer to the amount of cargo read
     pBuffer += cargo_read_amount;
     // mark the cargo as received
     cargo_remaining -= cargo_read_amount;
@@ -1656,13 +1654,23 @@ static int spihal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
 static bool spi_read(uint8_t *buffer, size_t len, uint8_t sendvalue) {
   memset(buffer, sendvalue, len); // clear out existing buffer
 
-	_spiPort->beginTransaction(SPISettings(_spiPortSpeed, MSBFIRST, SPI_MODE3));
-	digitalWrite(_cs, LOW);
+  uint8_t dummy[len];
+  memset(dummy, sendvalue, len);
+	
+  gpiod_line_set_value(lineCS, 0); // digitalWrite(_cs, LOW);
 
-  _spiPort->transfer(buffer, len);
+  // XXX really send nothing during transfer?
+   struct spi_ioc_transfer tr{};
+        tr.tx_buf = (unsigned long)dummy; // send a dummy buffer of the correct size
+        tr.rx_buf = (unsigned long)buffer; 
+        tr.len = len;
+        tr.speed_hz = _spiPortSpeed;
+        tr.bits_per_word = _spiBits;
+  
+  bool success =  ioctl(fd_spi, SPI_IOC_MESSAGE(1), &tr) >= 0;             
 
-  digitalWrite(_cs, HIGH);
-  _spiPort->endTransaction();
+  gpiod_line_set_value(lineCS, 1); // digitalWrite(_cs, HIGH);
+  
 
   return true;
 }
@@ -1681,32 +1689,19 @@ static bool spi_read(uint8_t *buffer, size_t len, uint8_t sendvalue) {
 static bool spi_write(const uint8_t *buffer, size_t len,
                                const uint8_t *prefix_buffer,
                                size_t prefix_len) {
+                          
+	gpiod_line_set_value(lineCS, 0); //digitalWrite(_cs, LOW);
 
-	_spiPort->beginTransaction(SPISettings(_spiPortSpeed, MSBFIRST, SPI_MODE3));
-	digitalWrite(_cs, LOW);
-
-  // do the writing
-#if defined(ARDUINO_ARCH_ESP32)
-  if (_spiPort) {
-    // if (prefix_len > 0) {
-    //   _spiPort->transferBytes(prefix_buffer, nullptr, prefix_len);
-    // }
-    if (len > 0) {
-      _spiPort->transferBytes(buffer, nullptr, len);
-    }
-  } else
-#endif
-  {
-    // for (size_t i = 0; i < prefix_len; i++) {
-    //   _spiPort->transfer(prefix_buffer[i]);
-    // }
-    for (size_t i = 0; i < len; i++) {
-      _spiPort->transfer(buffer[i]);
-    }
-  }
-
-  digitalWrite(_cs, HIGH);
-  _spiPort->endTransaction();
-
+  struct spi_ioc_transfer tr{};
+        tr.tx_buf = (unsigned long)buffer;
+        tr.rx_buf = (unsigned long)nullptr; // should tell kernel there is not read buffer to read into
+        tr.len = len;
+        tr.speed_hz = _spiPortSpeed;
+        tr.bits_per_word = _spiBits;
+  
+  bool success =  ioctl(fd_spi, SPI_IOC_MESSAGE(1), &tr) >= 0;                             
+  
+  gpiod_line_set_value(lineCS, 1); //digitalWrite(_cs, HIGH);
+  
   return true;
 }
