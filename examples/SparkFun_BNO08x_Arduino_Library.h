@@ -44,19 +44,35 @@
 #include "sh2_SensorValue.h"
 #include "sh2_err.h"
 
-
 #pragma once
+
+#if (ARDUINO >= 100)
+#include "Arduino.h"
+#else
+#include "WProgram.h"
+#endif
+
+#include <Wire.h>
+#include <SPI.h>
 
 //The default I2C address for the BNO08x on the SparkFun breakout is 0x4B. 0x4A is also possible.
 #define BNO08x_DEFAULT_ADDRESS 0x4B
 
-// The default SPI port for Raspberry Pi
-#define BNO08x_DEFAULT_SPI_DEV "/dev/spidev0.0"
-#define BNO08x_DEFAULT_GPIO_CHIP "gpiochip0"
+//Platform specific configurations
+
+//Define the size of the I2C buffer based on the platform the user has
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
 
 //I2C_BUFFER_LENGTH is defined in Wire.H
 #define I2C_BUFFER_LENGTH 32
 
+//#else
+
+//The catch-all default is 32
+//#define I2C_BUFFER_LENGTH 32
+
+#endif
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
@@ -70,7 +86,6 @@
 #define SHTP_REPORT_PRODUCT_ID_REQUEST 0xF9
 #define SHTP_REPORT_BASE_TIMESTAMP 0xFB
 #define SHTP_REPORT_SET_FEATURE_COMMAND 0xFD
-
 
 //All the different sensors and features we can get reports from
 //These are used when enabling a given sensor
@@ -129,9 +144,9 @@
 class BNO08x
 {
 public:
-	bool begin(uint8_t deviceAddress = BNO08x_DEFAULT_ADDRESS, int8_t user_INTPin = -1, int8_t user_RSTPin = -1); //By default use the default I2C addres, and use Wire port
-	bool beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed = 1000000, const char* dev = BNO08x_DEFAULT_SPI_DEV, const char* gpio_chip = BNO08x_DEFAULT_GPIO_CHIP);
-	bool isConnected();
+	boolean begin(uint8_t deviceAddress = BNO08x_DEFAULT_ADDRESS, TwoWire &wirePort = Wire, int8_t user_INTPin = -1, int8_t user_RSTPin = -1); //By default use the default I2C addres, and use Wire port
+	boolean beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed = 1000000, SPIClass &spiPort = SPI);
+	boolean isConnected();
 
     sh2_ProductIds_t prodIds; ///< The product IDs returned by the sensor
 	sh2_SensorValue_t sensorValue;
@@ -145,7 +160,7 @@ public:
     bool getSensorEvent();
 	uint8_t getSensorEventID();
 
-	void enableDebugging(bool val); //Turn on debug printing. 
+	void enableDebugging(Stream &debugPort = Serial); //Turn on debug printing. If user doesn't specify then Serial will be used.
 
 	bool softReset();	  //Try to reset the IMU via software
 	bool serviceBus(void);	
@@ -289,6 +304,10 @@ public:
 //	uint8_t _cs;				 //Pins needed for SPI
 
 private:
+
+	Stream *_debugPort;			 //The stream to send debug messages to if enabled. Usually Serial.
+	boolean _printDebug = false; //Flag to print debugging variables
+
 	//These are the raw sensor values (without Q applied) pulled from the user requested Input Report
 	uint16_t rawAccelX, rawAccelY, rawAccelZ, accelAccuracy;
 	uint16_t rawLinAccelX, rawLinAccelY, rawLinAccelZ, accelLinAccuracy;
