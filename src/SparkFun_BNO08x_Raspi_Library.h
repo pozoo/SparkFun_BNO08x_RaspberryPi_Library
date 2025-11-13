@@ -155,25 +155,25 @@ public:
 
 	float qToFloat(int16_t fixedPointValue, uint8_t qPoint); //Given a Q value, converts fixed point floating to regular floating point number
 
-	bool enableRotationVector(uint16_t timeBetweenReports = 10);
-	bool enableGeomagneticRotationVector(uint16_t timeBetweenReports = 10);
-	bool enableGameRotationVector(uint16_t timeBetweenReports = 10);
-	bool enableARVRStabilizedRotationVector(uint16_t timeBetweenReports);
-	bool enableARVRStabilizedGameRotationVector(uint16_t timeBetweenReports);
-	bool enableAccelerometer(uint16_t timeBetweenReports = 10);
-	bool enableLinearAccelerometer(uint16_t timeBetweenReports = 10);
-	bool enableGravity(uint16_t timeBetweenReports = 10);
-	bool enableGyro(uint16_t timeBetweenReports = 10);
-	bool enableUncalibratedGyro(uint16_t timeBetweenReports = 10);
-	bool enableMagnetometer(uint16_t timeBetweenReports = 10);
-	bool enableTapDetector(uint16_t timeBetweenReports);
-	bool enableStepCounter(uint16_t timeBetweenReports = 10);
-	bool enableStabilityClassifier(uint16_t timeBetweenReports = 10);
-	bool enableActivityClassifier(uint16_t timeBetweenReports, uint32_t activitiesToEnable);
-	bool enableRawAccelerometer(uint16_t timeBetweenReports = 10);
-	bool enableRawGyro(uint16_t timeBetweenReports = 10);
-	bool enableRawMagnetometer(uint16_t timeBetweenReports = 10);
-	bool enableGyroIntegratedRotationVector(uint16_t timeBetweenReports = 10);
+	bool enableRotationVector(uint32_t timeBetweenReports = 10);  // Change uint16_t to uint32_t
+	bool enableGeomagneticRotationVector(uint32_t timeBetweenReports = 10);
+	bool enableGameRotationVector(uint32_t timeBetweenReports = 10);
+	bool enableARVRStabilizedRotationVector(uint32_t timeBetweenReports);
+	bool enableARVRStabilizedGameRotationVector(uint32_t timeBetweenReports);
+	bool enableAccelerometer(uint32_t timeBetweenReports = 10);
+	bool enableLinearAccelerometer(uint32_t timeBetweenReports = 10);
+	bool enableGravity(uint32_t timeBetweenReports = 10);
+	bool enableGyro(uint32_t timeBetweenReports = 10);
+	bool enableUncalibratedGyro(uint32_t timeBetweenReports = 10);
+	bool enableMagnetometer(uint32_t timeBetweenReports = 10);
+	bool enableTapDetector(uint32_t timeBetweenReports);
+	bool enableStepCounter(uint32_t timeBetweenReports = 10);
+	bool enableStabilityClassifier(uint32_t timeBetweenReports = 10);
+	bool enableActivityClassifier(uint32_t timeBetweenReports, uint32_t activitiesToEnable);
+	bool enableRawAccelerometer(uint32_t timeBetweenReports = 10);
+	bool enableRawGyro(uint32_t timeBetweenReports = 10);
+	bool enableRawMagnetometer(uint32_t timeBetweenReports = 10);
+	bool enableGyroIntegratedRotationVector(uint32_t timeBetweenReports = 10);
 
 	void getQuat(float &i, float &j, float &k, float &real, float &radAccuracy, uint8_t &accuracy);
 	float getQuatI();

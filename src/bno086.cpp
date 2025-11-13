@@ -91,7 +91,7 @@ void setup() {
 // Here is where you define the sensor outputs you want to receive
 void setReports() {
   printf("Setting desired report\n");
-  if (myIMU.enableRotationVector() == true) {
+  if (myIMU.enableRotationVector(500) == true) {
     printf("Rotation vector enabled\n");
     printf("Output in form i, j, k, real, accuracy\n");
   } else {
