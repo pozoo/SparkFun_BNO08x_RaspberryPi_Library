@@ -44,7 +44,6 @@
 #include <cstddef> // for size_t
 #include <cmath>
 #include <cstring>
-#include <unistd.h> // for usleep
 #include <algorithm> // for std::min
 #include <time.h>
 #include <gpiod.h>
@@ -52,14 +51,16 @@
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
 #include <fcntl.h>
+#include <unistd.h>
+#include <time.h>
+#include <errno.h>
 
 bool _printDebug = false; //Flag to print debugging variables
-int8_t _int_pin = -1, _reset_pin = -1;
+int8_t _int_pin = -1, _reset_pin = -1, _cs_pin = -1;
 static uint8_t _deviceAddress = BNO08x_DEFAULT_ADDRESS; //Keeps track of I2C address. setI2CAddress changes this.
 uint32_t _spiPortSpeed = 3000000; //Optional user defined port speed
 uint8_t _spiMode = SPI_MODE_3;   // CPOL=1, CPHA=1
 uint8_t _spiBits = 8;            // 8‐bit words
-uint8_t _cs;				 //Pin needed for SPI
 int fd_spi;                 // SPI file descriptor
 
 // GPIO variables
@@ -101,6 +102,14 @@ static bool spi_read(uint8_t *buffer, size_t len, uint8_t sendvalue = 0xFF);
 static bool spi_write(const uint8_t *buffer, size_t len,
 			const uint8_t *prefix_buffer = nullptr, size_t prefix_len = 0);
 			
+int sleep_us_rel(unsigned long long us) {
+  struct timespec req = { .tv_sec = (time_t)(us / 1000000ULL),
+                          .tv_nsec = (long)((us % 1000000ULL) * 1000ULL) };
+  while (nanosleep(&req, &req) == -1) { 
+    if (errno != EINTR) return -1; 
+  }
+  return 0;
+}
 
 size_t _maxBufferSize = 32;
 size_t maxBufferSize();		
@@ -145,13 +154,13 @@ bool BNO08x::begin(uint8_t deviceAddress, int8_t user_INTPin, int8_t user_RSTPin
 
 //Initializes the sensor with basic settings using SPI
 //Returns false if sensor is not detected
-bool BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTPin, uint32_t spiPortSpeed, const char *dev, const char *gpio_chip)
+bool BNO08x::beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin, uint32_t spiPortSpeed, const char *dev, const char *gpio_chip)
 {
   _spiPortSpeed = spiPortSpeed;
 	if (_spiPortSpeed > 3000000)
 		_spiPortSpeed = 3000000; //BNO08x max is 3MHz
 
-  _cs = user_CSPin;
+  _cs_pin = user_CSPin;
 	_int_pin = user_INTPin;
 	_reset_pin = user_RSTPin;
 
@@ -164,19 +173,24 @@ bool BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTP
         return 1;
     }
 
-    // Configure GPIOs
-    lineCS = gpiod_chip_get_line(chip, _cs);
-    if (!lineCS) {
-        perror("Get line failed");
-        gpiod_chip_close(chip);
-        return 1;
-    }
-    ret = gpiod_line_request_output(lineCS, GPIO_CONSUMER, 0);
-    if (ret < 0) {
-        perror("Request line as output failed");
-        gpiod_chip_close(chip);
-        return 1;
-    }
+    if (_cs_pin != -1) { // manual CS control is optional, raspberry SPI normally handles it
+        // Configure CS GPIO
+        lineCS = gpiod_chip_get_line(chip, _cs_pin);
+        if (!lineCS) {
+            perror("Get line failed");
+            gpiod_chip_close(chip);
+            return 1;
+        }
+        ret = gpiod_line_request_output(lineCS, GPIO_CONSUMER, 0);
+        if (ret < 0) {
+            perror("Request line as output failed");
+            gpiod_chip_close(chip);
+            return 1;
+        }
+        gpiod_line_set_value(lineCS, 1); //Deselect BNO08x
+    } else {
+        if (_printDebug) printf("No CS pin provided, relying on SPI driver to control CS\n");
+    } 
 
     lineRST = gpiod_chip_get_line(chip, _reset_pin);
     if (!lineRST) {
@@ -204,8 +218,6 @@ bool BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTP
         return 1;
     }
 
-    gpiod_line_set_value(lineCS, 1); //Deselect BNO08x
-
     fd_spi = open(dev, O_RDWR);
         if (fd_spi < 0) return false;
         ioctl(fd_spi, SPI_IOC_WR_MODE, &_spiMode);
@@ -221,6 +233,31 @@ bool BNO08x::beginSPI(uint8_t user_CSPin, uint8_t user_INTPin, uint8_t user_RSTP
 	_HAL.getTimeUs = hal_getTimeUs;
 
     return _init();
+}
+
+void BNO08x::closeSPI()
+{
+    _HAL.close(&_HAL);
+
+    // Release GPIO lines and close chip
+    if (lineINT) {
+        gpiod_line_release(lineINT);
+    }
+    if (lineRST) {
+        gpiod_line_release(lineRST);
+    }
+    if (lineCS) {
+        gpiod_line_release(lineCS);
+    }
+    if (chip) {
+        gpiod_chip_close(chip);
+    }
+
+    // Close SPI file descriptor
+    if (fd_spi >= 0) {
+        close(fd_spi);
+        fd_spi = -1;
+    }
 }
 
 
@@ -1218,7 +1255,7 @@ bool BNO08x::enableReport(sh2_SensorId_t sensorId, uint32_t interval_us,
   config.sensorSpecific = sensorSpecific;
 
   config.reportInterval_us = interval_us;
-  printf("Enabling report ID %d with interval %lu us\n", sensorId,
+  if (_printDebug) printf("Enabling report ID %d with interval %u us\n", sensorId,
          interval_us);
 
   if(_int_pin != -1) {
@@ -1253,11 +1290,11 @@ static int i2chal_open(sh2_Hal_t *self) {
       success = true;
       break;
     }
-    usleep(30000); // 30ms in microseconds
+    sleep_us_rel(30000); // 30ms in microseconds
   }
   if (!success)
     return -1;
-  usleep(30000); // 30ms in microseconds
+  sleep_us_rel(30000); // 30ms in microseconds
   return 0;
 }
 
@@ -1394,13 +1431,13 @@ static void hal_hardwareReset(void) {
 
   if (_reset_pin != -1) {
     gpiod_line_set_value(lineRST, 1); // HIGH
-    usleep(10000); // 10ms in microseconds
+    sleep_us_rel(10000); // 10ms in microseconds
     gpiod_line_set_value(lineRST, 0); // LOW
     if (_printDebug) printf("Reset LOW\n");
-    usleep(10000); // 10ms in microseconds
+    sleep_us_rel(10000); // 10ms in microseconds
     gpiod_line_set_value(lineRST, 1); // HIGH
     if (_printDebug) printf("Reset HIGH\n");
-    usleep(10000); // 10ms in microseconds
+    sleep_us_rel(10000); // 10ms in microseconds
   }
 }
 
@@ -1582,9 +1619,10 @@ static bool hal_wait_for_int(void) {
   for (int i = 0; i < 500; i++) {
     if (gpiod_line_get_value(lineINT) == 0)  // Check if INT pin is LOW
       return true;
-    usleep(1000);
+    sleep_us_rel(1000);
   }
   // timed out, try to recover with HW reset
+  if (_printDebug) printf("spi_wait_for_int timed out, resetting\n");
   hal_hardwareReset();
 
   return false;
@@ -1675,7 +1713,7 @@ static bool spi_read(uint8_t *buffer, size_t len, uint8_t sendvalue) {
   uint8_t dummy[len];
   memset(dummy, sendvalue, len);
 	
-  gpiod_line_set_value(lineCS, 0); // digitalWrite(_cs, LOW);
+  if (_cs_pin != -1) gpiod_line_set_value(lineCS, 0); // digitalWrite(_cs, LOW);
 
   // XXX really send nothing during transfer?
    struct spi_ioc_transfer tr{};
@@ -1687,12 +1725,12 @@ static bool spi_read(uint8_t *buffer, size_t len, uint8_t sendvalue) {
   
   bool success =  ioctl(fd_spi, SPI_IOC_MESSAGE(1), &tr) >= 0;             
 
-  if (success < 0) {
+  if (!success) {
     perror("SPI_IOC_MESSAGE (read)");
     return false;
   }
 
-  gpiod_line_set_value(lineCS, 1); // digitalWrite(_cs, HIGH);
+  if (_cs_pin != -1) gpiod_line_set_value(lineCS, 1); // digitalWrite(_cs, HIGH);
   
 
   return true;
@@ -1715,7 +1753,7 @@ static bool spi_write(const uint8_t *buffer, size_t len,
   
   if (_printDebug) printf("spi_write, %zu bytes\n", len);
 	
-  gpiod_line_set_value(lineCS, 0); //digitalWrite(_cs, LOW);
+  if (_cs_pin != -1) gpiod_line_set_value(lineCS, 0); //digitalWrite(_cs, LOW);
 
   struct spi_ioc_transfer tr{};
         tr.tx_buf = (unsigned long)buffer;
@@ -1725,12 +1763,12 @@ static bool spi_write(const uint8_t *buffer, size_t len,
         tr.bits_per_word = _spiBits;
   
   bool success =  ioctl(fd_spi, SPI_IOC_MESSAGE(1), &tr) >= 0;    
-  if (success < 0) {
+  if (!success) {
     perror("SPI_IOC_MESSAGE (write)");
     return false;
   }                         
   
-  gpiod_line_set_value(lineCS, 1); //digitalWrite(_cs, HIGH);
+  if (_cs_pin != -1) gpiod_line_set_value(lineCS, 1); //digitalWrite(_cs, HIGH);
   
   return true;
 }

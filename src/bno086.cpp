@@ -76,11 +76,15 @@ void setup() {
 
   myIMU.enableDebugging(false); 
   
-  if (myIMU.beginSPI(BNO08X_CS, BNO08X_INT, BNO08X_RST) == false) {
+  if (myIMU.beginSPI(BNO08X_INT, BNO08X_RST) == false) {
     printf("BNO08x not detected. Check your jumpers and the hookup guide. Exiting. \n");
     std::exit(EXIT_FAILURE);
   }
   printf("BNO08x found!\n");
+
+  if (myIMU.wasReset()) {
+    printf("sensor was reset 1\n");
+  }
 
   setReports();
 
@@ -91,7 +95,7 @@ void setup() {
 // Here is where you define the sensor outputs you want to receive
 void setReports() {
   printf("Setting desired report\n");
-  if (myIMU.enableRotationVector(500) == true) {
+  if (myIMU.enableRotationVector(10) == true) {
     printf("Rotation vector enabled\n");
     printf("Output in form i, j, k, real, accuracy\n");
   } else {
@@ -99,9 +103,14 @@ void setReports() {
   }
   usleep(100000); // This delay allows enough time for the BNO086 to accept the new 
               // configuration and clear its reset status
+  
+  if (myIMU.wasReset()) {
+    printf("sensor was reset 2\n");
+  }
 }
 
 void loop() {
+  myIMU.getSensorEvent();
   usleep(10000);
 
   if (myIMU.wasReset()) {
@@ -139,9 +148,10 @@ void loop() {
 int main(int argc, char const *argv[])
 {
   setup();
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < 100; i++) {
     loop();
   } 
+  myIMU.closeSPI();
   return 0;
 }
 

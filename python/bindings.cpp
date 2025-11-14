@@ -23,16 +23,18 @@ PYBIND11_MODULE(bno08x, m) {
            py::arg("user_RSTPin") = -1)
 
       .def("beginSPI",
-           [](BNO08x &self, uint8_t cs, uint8_t int_pin, uint8_t rst_pin,
+           [](BNO08x &self, int int_pin, int rst_pin, int cs_pin,
               uint32_t spi_speed, const std::string &dev, const std::string &gpio_chip) {
-             return self.beginSPI(cs, int_pin, rst_pin, spi_speed, dev.c_str(), gpio_chip.c_str());
+             return self.beginSPI(int_pin, rst_pin, cs_pin, spi_speed, dev.c_str(), gpio_chip.c_str());
            },
-           py::arg("user_CSPin"),
            py::arg("user_INTPin"),
            py::arg("user_RSTPin"),
+           py::arg("user_CSPin") = -1,
            py::arg("spiPortSpeed") = 1000000U,
            py::arg("dev") = BNO08x_DEFAULT_SPI_DEV,
            py::arg("gpio_chip") = BNO08x_DEFAULT_GPIO_CHIP)
+
+      .def("closeSPI", &BNO08x::closeSPI)
 
       .def("isConnected", &BNO08x::isConnected)
 
