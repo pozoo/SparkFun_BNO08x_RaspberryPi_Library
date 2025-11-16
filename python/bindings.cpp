@@ -34,7 +34,7 @@ PYBIND11_MODULE(bno08x, m) {
            py::arg("dev") = BNO08x_DEFAULT_SPI_DEV,
            py::arg("gpio_chip") = BNO08x_DEFAULT_GPIO_CHIP)
 
-      .def("closeSPI", &BNO08x::closeSPI)
+      .def("close", &BNO08x::close)
 
       .def("isConnected", &BNO08x::isConnected)
 
