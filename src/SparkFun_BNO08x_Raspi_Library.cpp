@@ -185,7 +185,7 @@ bool BNO08x::beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin,
         }
         ret = gpiod_line_request_output(lineCS, GPIO_CONSUMER, 0);
         if (ret < 0) {
-            perror("Request line as output failed");
+            perror("Request lineCS as output failed");
             gpiod_chip_close(chip);
             return 1;
         }
@@ -202,7 +202,7 @@ bool BNO08x::beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin,
     }
     ret = gpiod_line_request_output(lineRST, GPIO_CONSUMER, 0);
     if (ret < 0) {
-        perror("Request line as output failed");
+        perror("Request lineRST as output failed");
         gpiod_chip_close(chip);
         return 1;
     }
@@ -215,7 +215,7 @@ bool BNO08x::beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin,
     }
     ret = gpiod_line_request_input_flags(lineINT, GPIO_CONSUMER, GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP);
     if (ret < 0) {
-        perror("Request line as input with pull-up failed");
+        perror("Request lineINT as input with pull-up failed");
         gpiod_chip_close(chip);
         return 1;
     }
