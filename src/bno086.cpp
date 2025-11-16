@@ -76,7 +76,7 @@ void setup() {
 
   myIMU.enableDebugging(false); 
   
-  if (myIMU.beginSPI(BNO08X_INT, BNO08X_RST) == false) {
+  if (myIMU.beginSPI(BNO08X_INT, BNO08X_RST, -1, 200000) == false) {
     printf("BNO08x not detected. Check your jumpers and the hookup guide. Exiting. \n");
     std::exit(EXIT_FAILURE);
   }
@@ -113,10 +113,10 @@ void loop() {
   myIMU.getSensorEvent();
   usleep(10000);
 
-  if (myIMU.wasReset()) {
-    printf("sensor was reset\n");
-    setReports();
-  }
+  // if (myIMU.wasReset()) {
+  //   printf("sensor was reset in loop\n");
+  //   setReports();
+  // }
 
   // Has a new event come in on the Sensor Hub Bus?
   if (myIMU.getSensorEvent() == true) {
@@ -148,10 +148,10 @@ void loop() {
 int main(int argc, char const *argv[])
 {
   setup();
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 50000; i++) {
     loop();
   } 
-  myIMU.closeSPI();
+  myIMU.close();
   return 0;
 }
 

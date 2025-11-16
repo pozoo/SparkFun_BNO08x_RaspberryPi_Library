@@ -131,7 +131,7 @@ class BNO08x
 public:
 	bool begin(uint8_t deviceAddress = BNO08x_DEFAULT_ADDRESS, int8_t user_INTPin = -1, int8_t user_RSTPin = -1); //By default use the default I2C addres, and use Wire port
 	bool beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin = -1, uint32_t spiPortSpeed = 1000000, const char* dev = BNO08x_DEFAULT_SPI_DEV, const char* gpio_chip = BNO08x_DEFAULT_GPIO_CHIP);
-	void closeSPI(); //Close the SPI device and GPIO lines
+	void close(); //Close the SPI/I2C device and GPIO lines
 	
 	bool isConnected();
 

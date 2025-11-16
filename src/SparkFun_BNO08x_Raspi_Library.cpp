@@ -61,6 +61,7 @@ static uint8_t _deviceAddress = BNO08x_DEFAULT_ADDRESS; //Keeps track of I2C add
 uint32_t _spiPortSpeed = 3000000; //Optional user defined port speed
 uint8_t _spiMode = SPI_MODE_3;   // CPOL=1, CPHA=1
 uint8_t _spiBits = 8;            // 8‐bit words
+char *_spiDev;  // SPI device file path
 int fd_spi;                 // SPI file descriptor
 
 // GPIO variables
@@ -156,6 +157,7 @@ bool BNO08x::begin(uint8_t deviceAddress, int8_t user_INTPin, int8_t user_RSTPin
 //Returns false if sensor is not detected
 bool BNO08x::beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin, uint32_t spiPortSpeed, const char *dev, const char *gpio_chip)
 {
+  _spiDev = (char *)dev;
   _spiPortSpeed = spiPortSpeed;
 	if (_spiPortSpeed > 3000000)
 		_spiPortSpeed = 3000000; //BNO08x max is 3MHz
@@ -218,13 +220,7 @@ bool BNO08x::beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin,
         return 1;
     }
 
-    fd_spi = open(dev, O_RDWR);
-        if (fd_spi < 0) return false;
-        ioctl(fd_spi, SPI_IOC_WR_MODE, &_spiMode);
-        ioctl(fd_spi, SPI_IOC_WR_BITS_PER_WORD, &_spiBits);
-        ioctl(fd_spi, SPI_IOC_WR_MAX_SPEED_HZ, &_spiPortSpeed);
-
-	if (_printDebug) printf("SPI device %s opened at %d Hz\n", dev, _spiPortSpeed);
+    
 
 	_HAL.open = spihal_open;
 	_HAL.close = spihal_close;
@@ -235,29 +231,9 @@ bool BNO08x::beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin,
     return _init();
 }
 
-void BNO08x::closeSPI()
+void BNO08x::close()
 {
-    _HAL.close(&_HAL);
-
-    // Release GPIO lines and close chip
-    if (lineINT) {
-        gpiod_line_release(lineINT);
-    }
-    if (lineRST) {
-        gpiod_line_release(lineRST);
-    }
-    if (lineCS) {
-        gpiod_line_release(lineCS);
-    }
-    if (chip) {
-        gpiod_chip_close(chip);
-    }
-
-    // Close SPI file descriptor
-    if (fd_spi >= 0) {
-        close(fd_spi);
-        fd_spi = -1;
-    }
+    sh2_close();
 }
 
 
@@ -1173,13 +1149,21 @@ bool BNO08x::saveCalibration()
 bool BNO08x::_init(int32_t sensor_id) {
   int status;
 
-  hardwareReset();
+  
 
   // Open SH2 interface (also registers non-sensor event handler.)
   status = sh2_open(&_HAL, hal_callback, NULL);
   if (status != SH2_OK) {
     return false;
   }
+
+  if (_printDebug) printf("sh2_open done\n");
+
+  hardwareReset();
+  wasReset(); // clear reset flag
+
+  // Register sensor listener
+  sh2_setSensorCallback(sensorHandler, NULL);
 
   // Check connection partially by getting the product id's
   memset(&prodIds, 0, sizeof(prodIds));
@@ -1189,9 +1173,14 @@ bool BNO08x::_init(int32_t sensor_id) {
     return false;
   }
 
-  // Register sensor listener
-  sh2_setSensorCallback(sensorHandler, NULL);
-
+  
+  printf("Product IDs:\n");
+  printf("  SW Version: %u.%u.%u\n", prodIds.entry[0].swVersionMajor, 
+          prodIds.entry[0].swVersionMinor, prodIds.entry[0].swVersionPatch);
+  printf("  SW Part Number: 0x%08X\n", prodIds.entry[0].swPartNumber);
+  printf("  SW Build Number: %u\n", prodIds.entry[0].swBuildNumber);
+  printf("  Reset Cause: %u\n", prodIds.entry[0].resetCause);
+  
   if (_printDebug) printf("init done\n");
 
   return true;
@@ -1257,12 +1246,13 @@ bool BNO08x::enableReport(sh2_SensorId_t sensorId, uint32_t interval_us,
   config.reportInterval_us = interval_us;
   if (_printDebug) printf("Enabling report ID %d with interval %u us\n", sensorId,
          interval_us);
-
-  if(_int_pin != -1) {
-	if (!hal_wait_for_int()) {
-      return 0;
-  	}
-  }
+  
+  /// XXX wait for INT removed
+  // if(_int_pin != -1) {
+	// if (!hal_wait_for_int()) {
+  //     return 0;
+  // 	}
+  // }
   
   int status = sh2_setSensorConfig(sensorId, &config);
 
@@ -1430,14 +1420,14 @@ static void hal_hardwareReset(void) {
   if (_printDebug)printf("hal_hardwareReset\n");
 
   if (_reset_pin != -1) {
-    gpiod_line_set_value(lineRST, 1); // HIGH
-    sleep_us_rel(10000); // 10ms in microseconds
     gpiod_line_set_value(lineRST, 0); // LOW
     if (_printDebug) printf("Reset LOW\n");
-    sleep_us_rel(10000); // 10ms in microseconds
+    sleep_us_rel(10000); // 10ms in microseconds, according to datasheet 10ns is enough but let's be safe
     gpiod_line_set_value(lineRST, 1); // HIGH
     if (_printDebug) printf("Reset HIGH\n");
-    sleep_us_rel(10000); // 10ms in microseconds
+    // it should take 94ms for the device to startup after RST goes HIGH and it will pull INT low when ready
+    sleep_us_rel(94000); // 94ms in microseconds
+    hal_wait_for_int();
   }
 }
 
@@ -1454,9 +1444,10 @@ static uint32_t hal_getTimeUs(sh2_Hal_t *self) {
 }
 
 static void hal_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
+  if (_printDebug) printf("hal_callback eventId: %d\n", pEvent->eventId);
   // If we see a reset, set a flag so that sensors will be reconfigured.
   if (pEvent->eventId == SH2_RESET) {
-    // Serial.println("Reset!");
+      if (_printDebug)printf("hal_callback reset event\n");
     _reset_occurred = true;
   }
 }
@@ -1606,30 +1597,62 @@ size_t maxBufferSize() { return _maxBufferSize; }
 *****************************************/
 
 static int spihal_open(sh2_Hal_t *self) {
-  // Serial.println("SPI HAL open");
+  if (_printDebug) printf("SPI HAL open\n");
 
-  hal_wait_for_int();
+  fd_spi = open(_spiDev, O_RDWR);
+        if (fd_spi < 0) return false;
+        ioctl(fd_spi, SPI_IOC_WR_MODE, &_spiMode);
+        ioctl(fd_spi, SPI_IOC_WR_BITS_PER_WORD, &_spiBits);
+        ioctl(fd_spi, SPI_IOC_WR_MAX_SPEED_HZ, &_spiPortSpeed);
+
+	if (_printDebug) printf("SPI device %s opened at %d Hz\n", _spiDev, _spiPortSpeed);
+
+  hal_hardwareReset();
 
   return 0;
 }
 
 static bool hal_wait_for_int(void) {
-  if (_printDebug) printf("spi_wait_for_int\n");
+  uint32_t start_time = hal_getTimeUs(nullptr);
+  if (_printDebug) printf("spi_wait_for_int, time: %u\n", hal_getTimeUs(nullptr));
 
   for (int i = 0; i < 500; i++) {
     if (gpiod_line_get_value(lineINT) == 0)  // Check if INT pin is LOW
       return true;
-    sleep_us_rel(1000);
+    sleep_us_rel(1000); // INT will stay low for 10ms after that it will time out
   }
-  // timed out, try to recover with HW reset
-  if (_printDebug) printf("spi_wait_for_int timed out, resetting\n");
-  hal_hardwareReset();
+  uint32_t elapsed = hal_getTimeUs(nullptr) - start_time;
+  if (_printDebug) printf("spi_wait_for_int timed out, resetting, elapsed time: %u us\n", elapsed);
+  
+  //perror("INT wait timed out");
+  //exit(1);
+  //hal_hardwareReset();
 
   return false;
 }
 
 static void spihal_close(sh2_Hal_t *self) {
-  // Serial.println("SPI HAL close");
+  if (_printDebug) printf("SPI HAL close\n");
+  
+  // Release GPIO lines and close chip
+    if (lineINT) {
+        gpiod_line_release(lineINT);
+    }
+    if (lineRST) {
+        gpiod_line_release(lineRST);
+    }
+    if (lineCS) {
+        gpiod_line_release(lineCS);
+    }
+    if (chip) {
+        gpiod_chip_close(chip);
+    }
+
+    // Close SPI file descriptor
+    if (fd_spi >= 0) {
+        close(fd_spi);
+        fd_spi = -1;
+    }
 }
 
 static int spihal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len,
@@ -1639,6 +1662,7 @@ static int spihal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len,
 
   uint16_t packet_size = 0;
 
+  
   if (!hal_wait_for_int()) {
     return 0;
   }
@@ -1668,7 +1692,7 @@ static int spihal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len,
   }
 
   if (!hal_wait_for_int()) {
-    return 0;
+  //   return 0;
   }
 
   if (!spi_read(pBuffer, packet_size, 0x00)) {
