@@ -56,6 +56,7 @@
 #include <errno.h>
 
 bool _printDebug = false; //Flag to print debugging variables
+char *_gpiochip; // name of the GPIO chip
 int8_t _int_pin = -1, _reset_pin = -1, _cs_pin = -1;
 static uint8_t _deviceAddress = BNO08x_DEFAULT_ADDRESS; //Keeps track of I2C address. setI2CAddress changes this.
 uint32_t _spiPortSpeed = 3000000; //Optional user defined port speed
@@ -74,6 +75,7 @@ struct gpiod_line *lineCS;
 
 static sh2_SensorValue_t *_sensor_value = NULL;
 static bool _reset_occurred = false;
+static uint32_t _int_timeout_count = 0;
 
 static int i2chal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len);
 static int i2chal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len,
@@ -162,65 +164,10 @@ bool BNO08x::beginSPI(int8_t user_INTPin, int8_t user_RSTPin, int8_t user_CSPin,
 	if (_spiPortSpeed > 3000000)
 		_spiPortSpeed = 3000000; //BNO08x max is 3MHz
 
+  _gpiochip = (char *)gpio_chip;
   _cs_pin = user_CSPin;
 	_int_pin = user_INTPin;
-	_reset_pin = user_RSTPin;
-
-  int ret = 0;
-
-  // Open the GPIO chip (usually /dev/gpiochip0) on PI5
-    chip = gpiod_chip_open_by_name(gpio_chip);
-    if (!chip) {
-        perror("Open chip failed");
-        return 1;
-    }
-
-    if (_cs_pin != -1) { // manual CS control is optional, raspberry SPI normally handles it
-        // Configure CS GPIO
-        lineCS = gpiod_chip_get_line(chip, _cs_pin);
-        if (!lineCS) {
-            perror("Get line failed");
-            gpiod_chip_close(chip);
-            return 1;
-        }
-        ret = gpiod_line_request_output(lineCS, GPIO_CONSUMER, 0);
-        if (ret < 0) {
-            perror("Request lineCS as output failed");
-            gpiod_chip_close(chip);
-            return 1;
-        }
-        gpiod_line_set_value(lineCS, 1); //Deselect BNO08x
-    } else {
-        if (_printDebug) printf("No CS pin provided, relying on SPI driver to control CS\n");
-    } 
-
-    lineRST = gpiod_chip_get_line(chip, _reset_pin);
-    if (!lineRST) {
-        perror("Get line failed");
-        gpiod_chip_close(chip);
-        return 1;
-    }
-    ret = gpiod_line_request_output(lineRST, GPIO_CONSUMER, 0);
-    if (ret < 0) {
-        perror("Request lineRST as output failed");
-        gpiod_chip_close(chip);
-        return 1;
-    }
-
-    lineINT = gpiod_chip_get_line(chip, _int_pin);
-    if (!lineINT) {
-        perror("Get line failed");
-        gpiod_chip_close(chip);
-        return 1;
-    }
-    ret = gpiod_line_request_input_flags(lineINT, GPIO_CONSUMER, GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP);
-    if (ret < 0) {
-        perror("Request lineINT as input with pull-up failed");
-        gpiod_chip_close(chip);
-        return 1;
-    }
-
-    
+	_reset_pin = user_RSTPin;  
 
 	_HAL.open = spihal_open;
 	_HAL.close = spihal_close;
@@ -240,6 +187,11 @@ void BNO08x::close()
 void BNO08x::enableDebugging(bool val)
 {
     _printDebug = val;
+}
+
+uint32_t BNO08x::getIntTimeoutCount()
+{
+    return _int_timeout_count;
 }
 
 // Quaternion to Euler conversion
@@ -1427,6 +1379,7 @@ static void hal_hardwareReset(void) {
     if (_printDebug) printf("Reset HIGH\n");
     // it should take 94ms for the device to startup after RST goes HIGH and it will pull INT low when ready
     sleep_us_rel(94000); // 94ms in microseconds
+    _int_timeout_count = 0;
     hal_wait_for_int();
   }
 }
@@ -1599,6 +1552,59 @@ size_t maxBufferSize() { return _maxBufferSize; }
 static int spihal_open(sh2_Hal_t *self) {
   if (_printDebug) printf("SPI HAL open\n");
 
+  int ret = 0;
+  // Open the GPIO chip (usually /dev/gpiochip0) on PI5
+  chip = gpiod_chip_open_by_name(_gpiochip);
+  if (!chip) {
+      perror("Open chip failed");
+      return 1;
+  }
+
+  if (_cs_pin != -1) { // manual CS control is optional, raspberry SPI normally handles it
+      // Configure CS GPIO
+      lineCS = gpiod_chip_get_line(chip, _cs_pin);
+      if (!lineCS) {
+          perror("Get line failed");
+          gpiod_chip_close(chip);
+          return 1;
+      }
+      ret = gpiod_line_request_output(lineCS, GPIO_CONSUMER, 0);
+      if (ret < 0) {
+          perror("Request lineCS as output failed");
+          gpiod_chip_close(chip);
+          return 1;
+      }
+      gpiod_line_set_value(lineCS, 1); //Deselect BNO08x
+  } else {
+      if (_printDebug) printf("No CS pin provided, relying on SPI driver to control CS\n");
+  } 
+
+  lineRST = gpiod_chip_get_line(chip, _reset_pin);
+  if (!lineRST) {
+      perror("Get line failed");
+      gpiod_chip_close(chip);
+      return 1;
+  }
+  ret = gpiod_line_request_output(lineRST, GPIO_CONSUMER, 0);
+  if (ret < 0) {
+      perror("Request lineRST as output failed");
+      gpiod_chip_close(chip);
+      return 1;
+  }
+
+  lineINT = gpiod_chip_get_line(chip, _int_pin);
+  if (!lineINT) {
+      perror("Get line failed");
+      gpiod_chip_close(chip);
+      return 1;
+  }
+  ret = gpiod_line_request_input_flags(lineINT, GPIO_CONSUMER, GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP);
+  if (ret < 0) {
+      perror("Request lineINT as input with pull-up failed");
+      gpiod_chip_close(chip);
+      return 1;
+  }
+
   fd_spi = open(_spiDev, O_RDWR);
         if (fd_spi < 0) return false;
         ioctl(fd_spi, SPI_IOC_WR_MODE, &_spiMode);
@@ -1617,11 +1623,14 @@ static bool hal_wait_for_int(void) {
   if (_printDebug) printf("spi_wait_for_int, time: %u\n", hal_getTimeUs(nullptr));
 
   for (int i = 0; i < 500; i++) {
-    if (gpiod_line_get_value(lineINT) == 0)  // Check if INT pin is LOW
+    if (gpiod_line_get_value(lineINT) == 0) {  // Check if INT pin is LOW
+      _int_timeout_count = 0;  // Reset counter on successful INT
       return true;
+    }
     sleep_us_rel(1000); // INT will stay low for 10ms after that it will time out
   }
   uint32_t elapsed = hal_getTimeUs(nullptr) - start_time;
+  _int_timeout_count++;
   if (_printDebug) printf("spi_wait_for_int timed out, resetting, elapsed time: %u us\n", elapsed);
   
   //perror("INT wait timed out");

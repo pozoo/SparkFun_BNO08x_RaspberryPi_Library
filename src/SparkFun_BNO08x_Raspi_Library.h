@@ -148,6 +148,7 @@ public:
 	uint8_t getSensorEventID();
 
 	void enableDebugging(bool val); //Turn on debug printing. 
+	uint32_t getIntTimeoutCount(); //Get the number of times INT wait has timed out
 
 	bool softReset();	  //Try to reset the IMU via software
 	bool serviceBus(void);	

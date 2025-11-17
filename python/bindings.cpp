@@ -43,6 +43,7 @@ PYBIND11_MODULE(bno08x, m) {
       .def("wasReset", &BNO08x::wasReset)
       .def("getResetReason", &BNO08x::getResetReason)
       .def("enableDebugging", &BNO08x::enableDebugging, py::arg("val"))
+      .def("getIntTimeoutCount", &BNO08x::getIntTimeoutCount)
       .def("softReset", &BNO08x::softReset)
       .def("serviceBus", &BNO08x::serviceBus)
       // Note: resetReason() is declared in the header but not defined in the
