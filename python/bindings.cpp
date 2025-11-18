@@ -210,6 +210,11 @@ PYBIND11_MODULE(bno08x, m) {
            py::arg("zAxis") = false, py::arg("basis") = int(SH2_TARE_BASIS_ROTATION_VECTOR))
       .def("saveTare", &BNO08x::saveTare)
       .def("clearTare", &BNO08x::clearTare)
+      .def("setReorientation",
+           [](BNO08x &self, sh2_Quaternion_t &quat) {
+             return self.setReorientation(&quat);
+           },
+           py::arg("orientation"))
 
       // Misc
       .def("getTapDetector", &BNO08x::getTapDetector)
@@ -234,4 +239,51 @@ PYBIND11_MODULE(bno08x, m) {
       .def("getRoll", &BNO08x::getRoll)
       .def("getPitch", &BNO08x::getPitch)
       .def("getYaw", &BNO08x::getYaw);
+
+  // Expose sh2_Quaternion_t as a Python class
+  py::class_<sh2_Quaternion_t>(m, "Quaternion")
+      .def(py::init<>())
+      .def(py::init<double, double, double, double>(),
+           py::arg("x"), py::arg("y"), py::arg("z"), py::arg("w"))
+      .def_readwrite("x", &sh2_Quaternion_t::x)
+      .def_readwrite("y", &sh2_Quaternion_t::y)
+      .def_readwrite("z", &sh2_Quaternion_t::z)
+      .def_readwrite("w", &sh2_Quaternion_t::w)
+      .def("__repr__", [](const sh2_Quaternion_t &q) {
+        return "Quaternion(x=" + std::to_string(q.x) + 
+               ", y=" + std::to_string(q.y) + 
+               ", z=" + std::to_string(q.z) + 
+               ", w=" + std::to_string(q.w) + ")";
+      });
+
+  // Orientation constants
+  m.attr("ORIENTATION_EAST_NORTH_UP") = ORIENTATION_EAST_NORTH_UP;
+  m.attr("ORIENTATION_NORTH_WEST_UP") = ORIENTATION_NORTH_WEST_UP;
+  m.attr("ORIENTATION_WEST_SOUTH_UP") = ORIENTATION_WEST_SOUTH_UP;
+  m.attr("ORIENTATION_SOUTH_EAST_UP") = ORIENTATION_SOUTH_EAST_UP;
+  
+  m.attr("ORIENTATION_EAST_SOUTH_DOWN") = ORIENTATION_EAST_SOUTH_DOWN;
+  m.attr("ORIENTATION_NORTH_EAST_DOWN") = ORIENTATION_NORTH_EAST_DOWN;
+  m.attr("ORIENTATION_WEST_NORTH_DOWN") = ORIENTATION_WEST_NORTH_DOWN;
+  m.attr("ORIENTATION_SOUTH_WEST_DOWN") = ORIENTATION_SOUTH_WEST_DOWN;
+  
+  m.attr("ORIENTATION_UP_SOUTH_EAST") = ORIENTATION_UP_SOUTH_EAST;
+  m.attr("ORIENTATION_NORTH_UP_EAST") = ORIENTATION_NORTH_UP_EAST;
+  m.attr("ORIENTATION_DOWN_NORTH_EAST") = ORIENTATION_DOWN_NORTH_EAST;
+  m.attr("ORIENTATION_SOUTH_DOWN_EAST") = ORIENTATION_SOUTH_DOWN_EAST;
+  
+  m.attr("ORIENTATION_UP_NORTH_WEST") = ORIENTATION_UP_NORTH_WEST;
+  m.attr("ORIENTATION_NORTH_DOWN_WEST") = ORIENTATION_NORTH_DOWN_WEST;
+  m.attr("ORIENTATION_DOWN_SOUTH_WEST") = ORIENTATION_DOWN_SOUTH_WEST;
+  m.attr("ORIENTATION_SOUTH_UP_WEST") = ORIENTATION_SOUTH_UP_WEST;
+  
+  m.attr("ORIENTATION_UP_EAST_NORTH") = ORIENTATION_UP_EAST_NORTH;
+  m.attr("ORIENTATION_WEST_UP_NORTH") = ORIENTATION_WEST_UP_NORTH;
+  m.attr("ORIENTATION_DOWN_WEST_NORTH") = ORIENTATION_DOWN_WEST_NORTH;
+  m.attr("ORIENTATION_EAST_DOWN_NORTH") = ORIENTATION_EAST_DOWN_NORTH;
+  
+  m.attr("ORIENTATION_UP_WEST_SOUTH") = ORIENTATION_UP_WEST_SOUTH;
+  m.attr("ORIENTATION_WEST_DOWN_SOUTH") = ORIENTATION_WEST_DOWN_SOUTH;
+  m.attr("ORIENTATION_DOWN_EAST_SOUTH") = ORIENTATION_DOWN_EAST_SOUTH;
+  m.attr("ORIENTATION_EAST_UP_SOUTH") = ORIENTATION_EAST_UP_SOUTH;
 }

@@ -126,6 +126,43 @@
 #define TARE_AR_VR_STABILIZED_ROTATION_VECTOR 4
 #define TARE_AR_VR_STABILIZED_GAME_ROTATION_VECTOR 5
 
+// Sensor orientation quaternion constants
+// Based on BNO08x datasheet physical axis alignment mappings
+// Format: sh2_Quaternion_t = {x, y, z, w}
+// Table format was: Qw Qx Qy Qz
+#define SQRT2_2 0.7071067811865476  // √2/2
+
+// Standard orientations (x, y, z axis)
+static const sh2_Quaternion_t ORIENTATION_EAST_NORTH_UP = {0, 0, 0, 1};
+static const sh2_Quaternion_t ORIENTATION_NORTH_WEST_UP = {0, 0, SQRT2_2, SQRT2_2};
+static const sh2_Quaternion_t ORIENTATION_WEST_SOUTH_UP = {0, 0, 1, 0};
+static const sh2_Quaternion_t ORIENTATION_SOUTH_EAST_UP = {0, 0, -SQRT2_2, SQRT2_2};
+
+static const sh2_Quaternion_t ORIENTATION_EAST_SOUTH_DOWN = {0, -1, 0, 0};
+static const sh2_Quaternion_t ORIENTATION_NORTH_EAST_DOWN = {-SQRT2_2, -SQRT2_2, 0, 0};
+static const sh2_Quaternion_t ORIENTATION_WEST_NORTH_DOWN = {-1, 0, 0, 0};
+static const sh2_Quaternion_t ORIENTATION_SOUTH_WEST_DOWN = {-SQRT2_2, SQRT2_2, 0, 0};
+
+static const sh2_Quaternion_t ORIENTATION_UP_SOUTH_EAST = {0, -SQRT2_2, SQRT2_2, 0};
+static const sh2_Quaternion_t ORIENTATION_NORTH_UP_EAST = {-0.5, -0.5, 0.5, 0.5};
+static const sh2_Quaternion_t ORIENTATION_DOWN_NORTH_EAST = {-SQRT2_2, 0, 0, SQRT2_2};
+static const sh2_Quaternion_t ORIENTATION_SOUTH_DOWN_EAST = {-0.5, 0.5, -0.5, 0.5};
+
+static const sh2_Quaternion_t ORIENTATION_UP_NORTH_WEST = {-SQRT2_2, 0, 0, -SQRT2_2};
+static const sh2_Quaternion_t ORIENTATION_NORTH_DOWN_WEST = {-0.5, -0.5, -0.5, -0.5};
+static const sh2_Quaternion_t ORIENTATION_DOWN_SOUTH_WEST = {0, -SQRT2_2, -SQRT2_2, 0};
+static const sh2_Quaternion_t ORIENTATION_SOUTH_UP_WEST = {0.5, -0.5, -0.5, 0.5};
+
+static const sh2_Quaternion_t ORIENTATION_UP_EAST_NORTH = {-0.5, -0.5, 0.5, -0.5};
+static const sh2_Quaternion_t ORIENTATION_WEST_UP_NORTH = {-SQRT2_2, 0, SQRT2_2, 0};
+static const sh2_Quaternion_t ORIENTATION_DOWN_WEST_NORTH = {-0.5, 0.5, 0.5, 0.5};
+static const sh2_Quaternion_t ORIENTATION_EAST_DOWN_NORTH = {0, -SQRT2_2, 0, -SQRT2_2};
+
+static const sh2_Quaternion_t ORIENTATION_UP_WEST_SOUTH = {0.5, -0.5, 0.5, 0.5};
+static const sh2_Quaternion_t ORIENTATION_WEST_DOWN_SOUTH = {-SQRT2_2, 0, -SQRT2_2, 0};
+static const sh2_Quaternion_t ORIENTATION_DOWN_EAST_SOUTH = {-0.5, -0.5, -0.5, 0.5};
+static const sh2_Quaternion_t ORIENTATION_EAST_UP_SOUTH = {0, -SQRT2_2, 0, SQRT2_2};
+
 class BNO08x
 {
 public:
@@ -244,6 +281,7 @@ public:
 	bool tareNow(bool zAxis=false, sh2_TareBasis_t basis=SH2_TARE_BASIS_ROTATION_VECTOR);
 	bool saveTare();
 	bool clearTare();
+	bool setReorientation(sh2_Quaternion_t *orientation);
 	
 	uint8_t getTapDetector();
 	uint64_t getTimeStamp();
