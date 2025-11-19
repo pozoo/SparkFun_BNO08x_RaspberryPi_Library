@@ -277,6 +277,7 @@ public:
 
 	bool setCalibrationConfig(uint8_t sensors);
 	bool saveCalibration();
+	bool clearDcdAndReset();
 
 	bool tareNow(bool zAxis=false, sh2_TareBasis_t basis=SH2_TARE_BASIS_ROTATION_VECTOR);
 	bool saveTare();

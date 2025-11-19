@@ -215,6 +215,7 @@ PYBIND11_MODULE(bno08x, m) {
              return self.setReorientation(&quat);
            },
            py::arg("orientation"))
+      .def("clearDcdAndReset", &BNO08x::clearDcdAndReset)
 
       // Misc
       .def("getTapDetector", &BNO08x::getTapDetector)
